@@ -1,15 +1,13 @@
 substitutions:
   device_name: esp32-wifi-term
   friendly_name: "Холодильная витрина"
-
-  # Идентификатор устройства в Народном мониторинге.
-  # MAC платы: 8C:D0:B2:A8:7C:21
-  narodmon_device_id: "8C-D0-B2-A8-7C-21"
-  narodmon_owner: !secret narodmon_owner
-
   warning_temperature: "6.0"
   alarm_temperature: "8.0"
   recovery_temperature: "5.0"
+
+  # MAC платы без двоеточий.
+  narodmon_device_id: "8CD0B2A87C21"
+  narodmon_owner: !secret narodmon_owner
 
 esphome:
   name: ${device_name}
@@ -18,24 +16,29 @@ esphome:
 
   project:
     name: "iven.fridge-monitor"
-    version: "0.2.0"
+    version: "0.3.0"
 
   on_boot:
     priority: -100
     then:
-      - logger.log:
-          level: INFO
-          format: "Устройство запущено"
+      - lambda: |-
+          id(temp_history)->add_event("boot", "Контроллер запущен");
 
 esp32:
   variant: esp32c3
   flash_size: 4MB
-
   framework:
     type: esp-idf
 
+external_components:
+  - source:
+      type: local
+      path: components
+
 logger:
   level: DEBUG
+  # В RAM сохраняется максимум 250 уже отформатированных строк.
+  # Частые VERBOSE/VERY_VERBOSE логи намеренно не включены.
 
 api:
   encryption:
@@ -43,13 +46,11 @@ api:
 
 ota:
   - platform: esphome
-
   - platform: web_server
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-
   power_save_mode: none
   reboot_timeout: 15min
 
@@ -62,14 +63,17 @@ wifi:
       - logger.log:
           level: INFO
           format: "Wi-Fi подключён"
+      - lambda: |-
+          id(temp_history)->add_event("wifi", "Wi-Fi подключён");
 
   on_disconnect:
     then:
       - logger.log:
           level: WARN
           format: "Wi-Fi отключён"
+      - lambda: |-
+          id(temp_history)->add_event("wifi", "Wi-Fi отключён");
 
-  use_address: 192.168.20.179
 captive_portal:
 
 web_server:
@@ -81,31 +85,27 @@ web_server:
   auth:
     username: !secret web_username
     password: !secret web_password
-    type: digest
+    type: basic
 
   sorting_groups:
     - id: group_temperature
       name: "Температура"
       sorting_weight: 10
-
     - id: group_alarms
       name: "Состояние витрины"
       sorting_weight: 20
-
     - id: group_cloud
       name: "Облачный мониторинг"
       sorting_weight: 30
-
     - id: group_network
       name: "Сеть"
       sorting_weight: 40
-
     - id: group_device
       name: "Устройство"
       sorting_weight: 50
 
 http_request:
-  useragent: "ESPHome-Fridge-Monitor/0.2"
+  useragent: "ESPHome-Fridge-Monitor/0.3"
   timeout: 10s
   verify_ssl: true
   follow_redirects: true
@@ -120,32 +120,19 @@ sensor:
     id: fridge_temperature
     name: "Температура витрины"
     one_wire_id: one_wire_bus
-
     resolution: 12
     update_interval: 30s
     accuracy_decimals: 2
-
     device_class: temperature
     state_class: measurement
 
     filters:
       - filter_out: nan
-
       - median:
           window_size: 5
           send_every: 3
           send_first_at: 1
-
-      # Сюда можно позже внести поправку после калибровки.
       - offset: 0.0
-
-    on_value:
-      then:
-        - logger.log:
-            level: DEBUG
-            format: "Температура: %.2f °C"
-            args:
-              - x
 
     web_server:
       sorting_group_id: group_temperature
@@ -155,9 +142,7 @@ sensor:
     id: wifi_signal_db
     name: "Уровень Wi-Fi"
     update_interval: 60s
-
     entity_category: diagnostic
-
     web_server:
       sorting_group_id: group_network
       sorting_weight: 10
@@ -166,19 +151,24 @@ sensor:
     id: device_uptime
     name: "Время работы"
     update_interval: 60s
-
     entity_category: diagnostic
-
     web_server:
       sorting_group_id: group_device
       sorting_weight: 20
 
+temperature_history:
+  id: temp_history
+  sensor_id: fridge_temperature
+  capacity: 1000
+  sample_interval: 30s
+  max_events: 100
+  max_log_lines: 250
+  max_log_line_length: 220
+
 binary_sensor:
   - platform: status
     name: "Контроллер в сети"
-
     entity_category: diagnostic
-
     web_server:
       sorting_group_id: group_device
       sorting_weight: 10
@@ -187,31 +177,29 @@ binary_sensor:
     id: temperature_warning
     name: "Предупреждение: температура выше нормы"
     device_class: problem
-
     lambda: |-
-      if (!id(fridge_temperature).has_state()) {
-        return false;
-      }
-
-      return id(fridge_temperature).state >
-             ${warning_temperature};
-
+      return id(fridge_temperature).has_state() &&
+             id(fridge_temperature).state > ${warning_temperature};
     filters:
       - delayed_on: 10min
       - delayed_off: 5min
-
     on_press:
       then:
         - logger.log:
             level: WARN
             format: "ПРЕДУПРЕЖДЕНИЕ: высокая температура"
-
+        - lambda: |-
+            id(temp_history)->add_event(
+              "warning",
+              "Температура выше предупредительного порога"
+            );
     on_release:
       then:
         - logger.log:
             level: INFO
             format: "Предупреждение снято"
-
+        - lambda: |-
+            id(temp_history)->add_event("recovery", "Предупреждение снято");
     web_server:
       sorting_group_id: group_alarms
       sorting_weight: 20
@@ -220,31 +208,29 @@ binary_sensor:
     id: temperature_alarm
     name: "Авария: критическая температура"
     device_class: problem
-
     lambda: |-
-      if (!id(fridge_temperature).has_state()) {
-        return false;
-      }
-
-      return id(fridge_temperature).state >
-             ${alarm_temperature};
-
+      return id(fridge_temperature).has_state() &&
+             id(fridge_temperature).state > ${alarm_temperature};
     filters:
       - delayed_on: 5min
       - delayed_off: 5min
-
     on_press:
       then:
         - logger.log:
             level: ERROR
             format: "АВАРИЯ: критическая температура"
-
+        - lambda: |-
+            id(temp_history)->add_event("alarm", "Критическая температура");
     on_release:
       then:
         - logger.log:
             level: INFO
             format: "Температура вернулась в допустимый диапазон"
-
+        - lambda: |-
+            id(temp_history)->add_event(
+              "recovery",
+              "Температура вернулась в допустимый диапазон"
+            );
     web_server:
       sorting_group_id: group_alarms
       sorting_weight: 10
@@ -253,27 +239,26 @@ binary_sensor:
     id: temperature_sensor_error
     name: "Ошибка датчика температуры"
     device_class: problem
-
     lambda: |-
       return !id(fridge_temperature).has_state() ||
              isnan(id(fridge_temperature).state);
-
     filters:
       - delayed_on: 2min
       - delayed_off: 30s
-
     on_press:
       then:
         - logger.log:
             level: ERROR
             format: "DS18B20 не передаёт данные"
-
+        - lambda: |-
+            id(temp_history)->add_event("sensor", "DS18B20 не передаёт данные");
     on_release:
       then:
         - logger.log:
             level: INFO
             format: "Связь с DS18B20 восстановлена"
-
+        - lambda: |-
+            id(temp_history)->add_event("sensor", "Связь с DS18B20 восстановлена");
     web_server:
       sorting_group_id: group_alarms
       sorting_weight: 30
@@ -282,7 +267,6 @@ binary_sensor:
     id: narodmon_last_send_ok
     name: "Народный мониторинг: последняя отправка"
     device_class: connectivity
-
     web_server:
       sorting_group_id: group_cloud
       sorting_weight: 10
@@ -293,33 +277,16 @@ text_sensor:
     name: "Состояние температуры"
     icon: "mdi:thermometer-alert"
     update_interval: 10s
-
     lambda: |-
       if (!id(fridge_temperature).has_state() ||
-          isnan(id(fridge_temperature).state)) {
+          isnan(id(fridge_temperature).state))
         return {"Датчик недоступен"};
-      }
 
-      const float temperature =
-          id(fridge_temperature).state;
-
-      if (temperature >
-          ${alarm_temperature}) {
-        return {"АВАРИЯ"};
-      }
-
-      if (temperature >
-          ${warning_temperature}) {
-        return {"Повышенная температура"};
-      }
-
-      if (temperature <=
-          ${recovery_temperature}) {
-        return {"Норма"};
-      }
-
+      const float temperature = id(fridge_temperature).state;
+      if (temperature > ${alarm_temperature}) return {"АВАРИЯ"};
+      if (temperature > ${warning_temperature}) return {"Повышенная температура"};
+      if (temperature <= ${recovery_temperature}) return {"Норма"};
       return {"Допустимо"};
-
     web_server:
       sorting_group_id: group_alarms
       sorting_weight: 1
@@ -329,7 +296,6 @@ text_sensor:
     name: "Ответ Народного мониторинга"
     icon: "mdi:cloud-check"
     update_interval: never
-
     web_server:
       sorting_group_id: group_cloud
       sorting_weight: 20
@@ -337,67 +303,63 @@ text_sensor:
   - platform: wifi_info
     ip_address:
       name: "IP-адрес"
-
       entity_category: diagnostic
-
       web_server:
         sorting_group_id: group_network
         sorting_weight: 20
-
     ssid:
       name: "Wi-Fi сеть"
-
       entity_category: diagnostic
-
       web_server:
         sorting_group_id: group_network
         sorting_weight: 30
-
     mac_address:
       name: "MAC-адрес"
-
       entity_category: diagnostic
-
       web_server:
         sorting_group_id: group_network
         sorting_weight: 40
 
   - platform: version
     name: "Версия ESPHome"
-
     entity_category: diagnostic
-
     web_server:
       sorting_group_id: group_device
       sorting_weight: 30
 
 button:
   - platform: template
+    name: "Открыть историю"
+    icon: "mdi:chart-line"
+    on_press:
+      then:
+        - logger.log:
+            level: INFO
+            format: "История доступна по адресу /history"
+    web_server:
+      sorting_group_id: group_temperature
+      sorting_weight: 20
+
+  - platform: template
     name: "Отправить данные сейчас"
     icon: "mdi:cloud-upload"
-
     on_press:
       then:
         - script.execute: send_to_narodmon
-
     web_server:
       sorting_group_id: group_cloud
       sorting_weight: 30
 
   - platform: restart
     name: "Перезагрузить контроллер"
-
     entity_category: config
-
     web_server:
       sorting_group_id: group_device
       sorting_weight: 40
 
   - platform: safe_mode
     name: "Перезагрузить в безопасном режиме"
-
     entity_category: config
-
     web_server:
       sorting_group_id: group_device
       sorting_weight: 50
@@ -405,34 +367,21 @@ button:
 script:
   - id: send_to_narodmon
     mode: single
-
     then:
       - if:
           condition:
             and:
               - wifi.connected
-
               - lambda: |-
-                  return
-                    id(fridge_temperature).has_state() &&
-                    !isnan(
-                      id(fridge_temperature).state
-                    );
-
+                  return id(fridge_temperature).has_state() &&
+                         !isnan(id(fridge_temperature).state);
           then:
-            - logger.log:
-                level: INFO
-                format: "Отправка данных в Народный мониторинг"
-
             - http_request.post:
                 url: "https://narodmon.ru/post"
-
                 request_headers:
                   Content-Type: "application/x-www-form-urlencoded"
-
                 body: !lambda |-
                   char request_body[320];
-
                   snprintf(
                     request_body,
                     sizeof(request_body),
@@ -446,86 +395,54 @@ script:
                       ? id(wifi_signal_db).state
                       : -127.0f
                   );
-
                   return std::string(request_body);
-
                 capture_response: true
                 max_response_buffer_size: 512
-
                 on_response:
                   then:
                     - lambda: |-
-                        ESP_LOGI(
-                          "narodmon",
-                          "HTTP %d, ответ: %s",
-                          response->status_code,
-                          body.c_str()
-                        );
-
-                        if (
+                        const bool ok =
                           response->status_code == 200 &&
-                          body.find("OK") !=
-                            std::string::npos
-                        ) {
-                          id(narodmon_last_send_ok)
-                            ->publish_state(true);
+                          body.find("OK") != std::string::npos;
 
+                        id(narodmon_last_send_ok)->publish_state(ok);
 
-                          id(narodmon_status)
-                            ->publish_state("OK");
+                        if (ok) {
+                          id(narodmon_status)->publish_state("OK");
+                          id(temp_history)->add_event(
+                            "cloud",
+                            "Данные отправлены в Народный мониторинг"
+                          );
                         } else {
-                          id(narodmon_last_send_ok)
-                            ->publish_state(false);
-
-
-                          id(narodmon_status)
-                            ->publish_state(
-                              "HTTP " +
-                              std::to_string(
-                                response->status_code
-                              ) +
-                              ": " +
-                              body
-                            );
+                          id(narodmon_status)->publish_state(
+                            "HTTP " +
+                            std::to_string(response->status_code) +
+                            ": " + body
+                          );
+                          id(temp_history)->add_event(
+                            "cloud",
+                            "Ошибка ответа Народного мониторинга"
+                          );
                         }
-
-                
-                        
                 on_error:
                   then:
                     - lambda: |-
-                        ESP_LOGE(
-                          "narodmon",
-                          "Ошибка HTTP-запроса"
+                        id(narodmon_last_send_ok)->publish_state(false);
+                        id(narodmon_status)->publish_state("Ошибка соединения");
+                        id(temp_history)->add_event(
+                          "cloud",
+                          "Нет соединения с Народным мониторингом"
                         );
-
-                        id(narodmon_last_send_ok)
-                          ->publish_state(false);
-
-                        id(narodmon_status)
-                          ->publish_state(
-                            "Ошибка соединения"
-                          );
-
           else:
-            - logger.log:
-                level: WARN
-                format: "Отправка пропущена: нет Wi-Fi или данных температуры"
-
             - binary_sensor.template.publish:
                 id: narodmon_last_send_ok
                 state: false
-
             - text_sensor.template.publish:
                 id: narodmon_status
                 state: "Нет Wi-Fi или данных датчика"
 
 interval:
-  # Первая отправка произойдёт через минуту после загрузки.
-  # Затем данные уходят раз в пять минут.
   - interval: 5min
     startup_delay: 1min
-
     then:
       - script.execute: send_to_narodmon
-      
