@@ -471,10 +471,10 @@ script:
 
 
                           id(narodmon_status)
-                            .publish_state("OK");
+                            ->publish_state("OK");
                         } else {
                           id(narodmon_last_send_ok)
-                            .publish_state(false);
+                            ->publish_state(false);
 
 
                           id(narodmon_status)
