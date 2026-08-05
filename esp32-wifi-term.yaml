@@ -1,9 +1,26 @@
-# Board: ESP32-C3 Super Mini (Generic)
-# Definition: definitions/boards/esp32-c3-supermini/manifest.yaml
+# ESP32-C3 Super Mini
+# DS18B20:
+#   VCC  -> 3.3V
+#   GND  -> GND
+#   DATA -> GPIO4
+# Резистор 4.7 кОм между GPIO4 и 3.3V
+
+substitutions:
+  device_name: esp32-wifi-term
+  friendly_name: "Холодильная витрина"
+  device_location: "Магазин"
+
+  warning_temperature: "6.0"
+  alarm_temperature: "8.0"
+  recovery_temperature: "5.0"
 
 esphome:
-  name: esp32-wifi-term
-  friendly_name: esp32-wifi-term
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  comment: "Мониторинг температуры холодильной витрины"
+  project:
+    name: "iven.fridge_monitor"
+    version: "0.1.0"
 
 esp32:
   variant: esp32c3
@@ -12,6 +29,7 @@ esp32:
     type: esp-idf
 
 logger:
+  level: DEBUG
 
 api:
   encryption:
@@ -19,12 +37,234 @@ api:
 
 ota:
   - platform: esphome
+  - platform: web_server    
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+
   ap:
-    ssid: esp32-wifi-term Fallback Hotspot
+    ssid: "${friendly_name} Setup"
     password: "nedG14pOij8d"
 
+  reboot_timeout: 15min
+  power_save_mode: none
+
 captive_portal:
+
+# Красивый штатный интерфейс ESPHome.
+# По нажатию на температуру открывается локальный график.
+web_server:
+  port: 80
+  version: 3
+  include_internal: false
+  log: true
+
+  sorting_groups:
+    - id: group_temperature
+      name: "Температура"
+      sorting_weight: 10
+
+    - id: group_alarms
+      name: "Состояние витрины"
+      sorting_weight: 20
+
+    - id: group_network
+      name: "Сеть"
+      sorting_weight: 30
+
+    - id: group_device
+      name: "Устройство"
+      sorting_weight: 40
+  auth:
+    username: nostril
+    password: !secret esp32_wifi_term__web_password
+
+# Шина датчика DS18B20.
+one_wire:
+  - platform: gpio
+    pin: GPIO4
+    id: one_wire_bus
+
+sensor:
+  # Основной датчик температуры.
+  - platform: dallas_temp
+    id: fridge_temperature
+    name: "Температура витрины"
+    one_wire_id: one_wire_bus
+    resolution: 12
+    update_interval: 30s
+    accuracy_decimals: 1
+    device_class: temperature
+    state_class: measurement
+
+    filters:
+      # Убирает одиночные выбросы.
+      - median:
+          window_size: 5
+          send_every: 3
+          send_first_at: 1
+
+      # Калибровочная поправка.
+      - offset: 0.0
+
+    web_server:
+      sorting_group_id: group_temperature
+      sorting_weight: 10
+
+  # Уровень Wi-Fi.
+  - platform: wifi_signal
+    id: wifi_signal_db
+    name: "Уровень Wi-Fi"
+    update_interval: 60s
+    entity_category: diagnostic
+    web_server:
+      sorting_group_id: group_network
+      sorting_weight: 10
+
+  # Время работы после включения.
+  - platform: uptime
+    id: device_uptime
+    name: "Время работы"
+    update_interval: 60s
+    entity_category: diagnostic
+    web_server:
+      sorting_group_id: group_device
+      sorting_weight: 20
+
+binary_sensor:
+  # Состояние самого контроллера.
+  - platform: status
+    name: "Контроллер в сети"
+    entity_category: diagnostic
+    web_server:
+      sorting_group_id: group_device
+      sorting_weight: 10
+
+  # Температура выше +6 °C непрерывно 10 минут.
+  - platform: template
+    id: temperature_warning
+    name: "Предупреждение: высокая температура"
+    device_class: problem
+    lambda: |-
+      if (!id(fridge_temperature).has_state()) {
+        return false;
+      }
+      return id(fridge_temperature).state > ${warning_temperature};
+
+    filters:
+      - delayed_on: 10min
+      - delayed_off: 5min
+
+    web_server:
+      sorting_group_id: group_alarms
+      sorting_weight: 20
+
+  # Температура выше +8 °C непрерывно 5 минут.
+  - platform: template
+    id: temperature_alarm
+    name: "Авария: критическая температура"
+    device_class: problem
+    lambda: |-
+      if (!id(fridge_temperature).has_state()) {
+        return false;
+      }
+      return id(fridge_temperature).state > ${alarm_temperature};
+
+    filters:
+      - delayed_on: 5min
+      - delayed_off: 5min
+
+    web_server:
+      sorting_group_id: group_alarms
+      sorting_weight: 10
+
+  # Нет корректных данных от DS18B20.
+  - platform: template
+    name: "Ошибка датчика температуры"
+    device_class: problem
+    lambda: |-
+      return !id(fridge_temperature).has_state() ||
+             isnan(id(fridge_temperature).state);
+
+    web_server:
+      sorting_group_id: group_alarms
+      sorting_weight: 30
+
+text_sensor:
+  # Понятное текстовое состояние.
+  - platform: template
+    id: fridge_state
+    name: "Состояние температуры"
+    icon: "mdi:thermometer-alert"
+    update_interval: 10s
+    lambda: |-
+      if (!id(fridge_temperature).has_state() ||
+          isnan(id(fridge_temperature).state)) {
+        return {"Датчик недоступен"};
+      }
+
+      const float temperature = id(fridge_temperature).state;
+
+      if (temperature > ${alarm_temperature}) {
+        return {"АВАРИЯ"};
+      }
+
+      if (temperature > ${warning_temperature}) {
+        return {"Повышенная температура"};
+      }
+
+      if (temperature <= ${recovery_temperature}) {
+        return {"Норма"};
+      }
+
+      return {"Допустимо"};
+
+    web_server:
+      sorting_group_id: group_alarms
+      sorting_weight: 1
+
+  # Сетевые сведения.
+  - platform: wifi_info
+    ip_address:
+      name: "IP-адрес"
+      entity_category: diagnostic
+      web_server:
+        sorting_group_id: group_network
+        sorting_weight: 20
+
+    ssid:
+      name: "Wi-Fi сеть"
+      entity_category: diagnostic
+      web_server:
+        sorting_group_id: group_network
+        sorting_weight: 30
+
+    mac_address:
+      name: "MAC-адрес"
+      entity_category: diagnostic
+      web_server:
+        sorting_group_id: group_network
+        sorting_weight: 40
+
+  - platform: version
+    name: "Версия ESPHome"
+    entity_category: diagnostic
+    web_server:
+      sorting_group_id: group_device
+      sorting_weight: 30
+
+button:
+  - platform: restart
+    name: "Перезагрузить контроллер"
+    entity_category: config
+    web_server:
+      sorting_group_id: group_device
+      sorting_weight: 40
+
+  - platform: safe_mode
+    name: "Безопасный режим"
+    entity_category: config
+    web_server:
+      sorting_group_id: group_device
+      sorting_weight: 50
