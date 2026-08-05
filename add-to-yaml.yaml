@@ -1,0 +1,19 @@
+external_components:
+  - source:
+      type: local
+      path: components
+
+temperature_history:
+  id: temp_history
+  sensor_id: fridge_temperature
+  capacity: 1000
+  sample_interval: 30s
+  max_events: 100
+
+# В существующие обработчики добавляйте:
+#
+# - lambda: |-
+#     id(temp_history)->add_event("wifi", "Wi-Fi подключён");
+#
+# Страница после прошивки:
+# http://IP_ПЛАТЫ/history
