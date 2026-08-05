@@ -76,10 +76,7 @@ web_server:
     - id: group_device
       name: "Устройство"
       sorting_weight: 40
-  auth:
-    username: nostril
-    password: !secret esp32_wifi_term__web_password
-
+  
 # Шина датчика DS18B20.
 one_wire:
   - platform: gpio
