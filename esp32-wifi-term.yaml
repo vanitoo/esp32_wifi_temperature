@@ -16,7 +16,7 @@ esphome:
 
   project:
     name: "iven.fridge-monitor"
-    version: "0.3.0"
+    version: "0.3.1"
 
   on_boot:
     priority: -100
@@ -39,6 +39,12 @@ logger:
   level: DEBUG
   # В RAM сохраняется максимум 250 уже отформатированных строк.
   # Частые VERBOSE/VERY_VERBOSE логи намеренно не включены.
+
+# Диагностика платы и памяти.
+# Точного универсального процента загрузки CPU ESPHome не предоставляет.
+# Loop Time показывает задержки главного цикла и помогает обнаруживать перегрузку.
+debug:
+  update_interval: 60s
 
 api:
   encryption:
@@ -100,12 +106,15 @@ web_server:
     - id: group_network
       name: "Сеть"
       sorting_weight: 40
+    - id: group_diagnostics
+      name: "Ресурсы платы"
+      sorting_weight: 50
     - id: group_device
       name: "Устройство"
-      sorting_weight: 50
+      sorting_weight: 60
 
 http_request:
-  useragent: "ESPHome-Fridge-Monitor/0.3"
+  useragent: "ESPHome-Fridge-Monitor/0.3.1"
   timeout: 10s
   verify_ssl: true
   follow_redirects: true
@@ -146,6 +155,60 @@ sensor:
     web_server:
       sorting_group_id: group_network
       sorting_weight: 10
+
+  - platform: debug
+    free:
+      name: "Свободная RAM"
+      id: heap_free
+      unit_of_measurement: "B"
+      entity_category: diagnostic
+      web_server:
+        sorting_group_id: group_diagnostics
+        sorting_weight: 10
+
+    min_free:
+      name: "Минимум свободной RAM"
+      id: heap_min_free
+      unit_of_measurement: "B"
+      entity_category: diagnostic
+      web_server:
+        sorting_group_id: group_diagnostics
+        sorting_weight: 20
+
+    block:
+      name: "Максимальный свободный блок RAM"
+      id: heap_max_block
+      unit_of_measurement: "B"
+      entity_category: diagnostic
+      web_server:
+        sorting_group_id: group_diagnostics
+        sorting_weight: 30
+
+    fragmentation:
+      name: "Фрагментация RAM"
+      id: heap_fragmentation
+      unit_of_measurement: "%"
+      entity_category: diagnostic
+      web_server:
+        sorting_group_id: group_diagnostics
+        sorting_weight: 40
+
+    loop_time:
+      name: "Максимальное время цикла"
+      id: main_loop_time
+      unit_of_measurement: "ms"
+      entity_category: diagnostic
+      web_server:
+        sorting_group_id: group_diagnostics
+        sorting_weight: 50
+
+    cpu_frequency:
+      name: "Частота процессора"
+      id: cpu_frequency
+      entity_category: diagnostic
+      web_server:
+        sorting_group_id: group_diagnostics
+        sorting_weight: 60
 
   - platform: uptime
     id: device_uptime
@@ -299,6 +362,21 @@ text_sensor:
     web_server:
       sorting_group_id: group_cloud
       sorting_weight: 20
+
+  - platform: debug
+    device:
+      name: "Информация о плате"
+      entity_category: diagnostic
+      web_server:
+        sorting_group_id: group_diagnostics
+        sorting_weight: 70
+
+    reset_reason:
+      name: "Причина перезагрузки"
+      entity_category: diagnostic
+      web_server:
+        sorting_group_id: group_diagnostics
+        sorting_weight: 80
 
   - platform: wifi_info
     ip_address:
