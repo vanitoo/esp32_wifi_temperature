@@ -1,14 +1,11 @@
-# ESP32-C3 Super Mini
-# DS18B20:
-#   VCC  -> 3.3V
-#   GND  -> GND
-#   DATA -> GPIO4
-# Резистор 4.7 кОм между GPIO4 и 3.3V
-
 substitutions:
   device_name: esp32-wifi-term
   friendly_name: "Холодильная витрина"
-  device_location: "Магазин"
+
+  # Идентификатор устройства в Народном мониторинге.
+  # MAC платы: 8C:D0:B2:A8:7C:21
+  narodmon_device_id: "8C-D0-B2-A8-7C-21"
+  narodmon_owner: !secret narodmon_owner
 
   warning_temperature: "6.0"
   alarm_temperature: "8.0"
@@ -18,13 +15,22 @@ esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
   comment: "Мониторинг температуры холодильной витрины"
+
   project:
-    name: "iven.fridge_monitor"
-    version: "0.1.0"
+    name: "iven.fridge-monitor"
+    version: "0.2.0"
+
+  on_boot:
+    priority: -100
+    then:
+      - logger.log:
+          level: INFO
+          format: "Устройство запущено"
 
 esp32:
   variant: esp32c3
   flash_size: 4MB
+
   framework:
     type: esp-idf
 
@@ -33,32 +39,48 @@ logger:
 
 api:
   encryption:
-    key: "8UPkLPqkMXI8javh24RDt6498g8b3KqZ1pUvGgmeTk4="
+    key: !secret api_encryption_key
 
 ota:
   - platform: esphome
-  - platform: web_server    
+
+  - platform: web_server
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
 
+  power_save_mode: none
+  reboot_timeout: 15min
+
   ap:
     ssid: "${friendly_name} Setup"
-    password: "nedG14pOij8d"
+    password: !secret fallback_password
 
-  reboot_timeout: 15min
-  power_save_mode: none
+  on_connect:
+    then:
+      - logger.log:
+          level: INFO
+          format: "Wi-Fi подключён"
+
+  on_disconnect:
+    then:
+      - logger.log:
+          level: WARN
+          format: "Wi-Fi отключён"
 
 captive_portal:
 
-# Красивый штатный интерфейс ESPHome.
-# По нажатию на температуру открывается локальный график.
 web_server:
   port: 80
   version: 3
   include_internal: false
   log: true
+
+  auth:
+    username: !secret web_username
+    password: !secret web_password
+    type: digest
 
   sorting_groups:
     - id: group_temperature
@@ -69,149 +91,229 @@ web_server:
       name: "Состояние витрины"
       sorting_weight: 20
 
+    - id: group_cloud
+      name: "Облачный мониторинг"
+      sorting_weight: 30
+
     - id: group_network
       name: "Сеть"
-      sorting_weight: 30
+      sorting_weight: 40
 
     - id: group_device
       name: "Устройство"
-      sorting_weight: 40
-  
-# Шина датчика DS18B20.
+      sorting_weight: 50
+
+http_request:
+  useragent: "ESPHome-Fridge-Monitor/0.2"
+  timeout: 10s
+  verify_ssl: true
+  follow_redirects: true
+
 one_wire:
   - platform: gpio
-    pin: GPIO4
     id: one_wire_bus
+    pin: GPIO4
 
 sensor:
-  # Основной датчик температуры.
   - platform: dallas_temp
     id: fridge_temperature
     name: "Температура витрины"
     one_wire_id: one_wire_bus
+
     resolution: 12
     update_interval: 30s
-    accuracy_decimals: 1
+    accuracy_decimals: 2
+
     device_class: temperature
     state_class: measurement
 
     filters:
-      # Убирает одиночные выбросы.
+      - filter_out: nan
+
       - median:
           window_size: 5
           send_every: 3
           send_first_at: 1
 
-      # Калибровочная поправка.
+      # Сюда можно позже внести поправку после калибровки.
       - offset: 0.0
+
+    on_value:
+      then:
+        - logger.log:
+            level: DEBUG
+            format: "Температура: %.2f °C"
+            args:
+              - x
 
     web_server:
       sorting_group_id: group_temperature
       sorting_weight: 10
 
-  # Уровень Wi-Fi.
   - platform: wifi_signal
     id: wifi_signal_db
     name: "Уровень Wi-Fi"
     update_interval: 60s
+
     entity_category: diagnostic
+
     web_server:
       sorting_group_id: group_network
       sorting_weight: 10
 
-  # Время работы после включения.
   - platform: uptime
     id: device_uptime
     name: "Время работы"
     update_interval: 60s
+
     entity_category: diagnostic
+
     web_server:
       sorting_group_id: group_device
       sorting_weight: 20
 
 binary_sensor:
-  # Состояние самого контроллера.
   - platform: status
     name: "Контроллер в сети"
+
     entity_category: diagnostic
+
     web_server:
       sorting_group_id: group_device
       sorting_weight: 10
 
-  # Температура выше +6 °C непрерывно 10 минут.
   - platform: template
     id: temperature_warning
-    name: "Предупреждение: высокая температура"
+    name: "Предупреждение: температура выше нормы"
     device_class: problem
+
     lambda: |-
       if (!id(fridge_temperature).has_state()) {
         return false;
       }
-      return id(fridge_temperature).state > ${warning_temperature};
+
+      return id(fridge_temperature).state >
+             ${warning_temperature};
 
     filters:
       - delayed_on: 10min
       - delayed_off: 5min
 
+    on_press:
+      then:
+        - logger.log:
+            level: WARN
+            format: "ПРЕДУПРЕЖДЕНИЕ: высокая температура"
+
+    on_release:
+      then:
+        - logger.log:
+            level: INFO
+            format: "Предупреждение снято"
+
     web_server:
       sorting_group_id: group_alarms
       sorting_weight: 20
 
-  # Температура выше +8 °C непрерывно 5 минут.
   - platform: template
     id: temperature_alarm
     name: "Авария: критическая температура"
     device_class: problem
+
     lambda: |-
       if (!id(fridge_temperature).has_state()) {
         return false;
       }
-      return id(fridge_temperature).state > ${alarm_temperature};
+
+      return id(fridge_temperature).state >
+             ${alarm_temperature};
 
     filters:
       - delayed_on: 5min
       - delayed_off: 5min
 
+    on_press:
+      then:
+        - logger.log:
+            level: ERROR
+            format: "АВАРИЯ: критическая температура"
+
+    on_release:
+      then:
+        - logger.log:
+            level: INFO
+            format: "Температура вернулась в допустимый диапазон"
+
     web_server:
       sorting_group_id: group_alarms
       sorting_weight: 10
 
-  # Нет корректных данных от DS18B20.
   - platform: template
+    id: temperature_sensor_error
     name: "Ошибка датчика температуры"
     device_class: problem
+
     lambda: |-
       return !id(fridge_temperature).has_state() ||
              isnan(id(fridge_temperature).state);
+
+    filters:
+      - delayed_on: 2min
+      - delayed_off: 30s
+
+    on_press:
+      then:
+        - logger.log:
+            level: ERROR
+            format: "DS18B20 не передаёт данные"
+
+    on_release:
+      then:
+        - logger.log:
+            level: INFO
+            format: "Связь с DS18B20 восстановлена"
 
     web_server:
       sorting_group_id: group_alarms
       sorting_weight: 30
 
+  - platform: template
+    id: narodmon_last_send_ok
+    name: "Народный мониторинг: последняя отправка"
+    device_class: connectivity
+
+    web_server:
+      sorting_group_id: group_cloud
+      sorting_weight: 10
+
 text_sensor:
-  # Понятное текстовое состояние.
   - platform: template
     id: fridge_state
     name: "Состояние температуры"
     icon: "mdi:thermometer-alert"
     update_interval: 10s
+
     lambda: |-
       if (!id(fridge_temperature).has_state() ||
           isnan(id(fridge_temperature).state)) {
         return {"Датчик недоступен"};
       }
 
-      const float temperature = id(fridge_temperature).state;
+      const float temperature =
+          id(fridge_temperature).state;
 
-      if (temperature > ${alarm_temperature}) {
+      if (temperature >
+          ${alarm_temperature}) {
         return {"АВАРИЯ"};
       }
 
-      if (temperature > ${warning_temperature}) {
+      if (temperature >
+          ${warning_temperature}) {
         return {"Повышенная температура"};
       }
 
-      if (temperature <= ${recovery_temperature}) {
+      if (temperature <=
+          ${recovery_temperature}) {
         return {"Норма"};
       }
 
@@ -221,47 +323,203 @@ text_sensor:
       sorting_group_id: group_alarms
       sorting_weight: 1
 
-  # Сетевые сведения.
+  - platform: template
+    id: narodmon_status
+    name: "Ответ Народного мониторинга"
+    icon: "mdi:cloud-check"
+    update_interval: never
+
+    web_server:
+      sorting_group_id: group_cloud
+      sorting_weight: 20
+
   - platform: wifi_info
     ip_address:
       name: "IP-адрес"
+
       entity_category: diagnostic
+
       web_server:
         sorting_group_id: group_network
         sorting_weight: 20
 
     ssid:
       name: "Wi-Fi сеть"
+
       entity_category: diagnostic
+
       web_server:
         sorting_group_id: group_network
         sorting_weight: 30
 
     mac_address:
       name: "MAC-адрес"
+
       entity_category: diagnostic
+
       web_server:
         sorting_group_id: group_network
         sorting_weight: 40
 
   - platform: version
     name: "Версия ESPHome"
+
     entity_category: diagnostic
+
     web_server:
       sorting_group_id: group_device
       sorting_weight: 30
 
 button:
+  - platform: template
+    name: "Отправить данные сейчас"
+    icon: "mdi:cloud-upload"
+
+    on_press:
+      then:
+        - script.execute: send_to_narodmon
+
+    web_server:
+      sorting_group_id: group_cloud
+      sorting_weight: 30
+
   - platform: restart
     name: "Перезагрузить контроллер"
+
     entity_category: config
+
     web_server:
       sorting_group_id: group_device
       sorting_weight: 40
 
   - platform: safe_mode
-    name: "Безопасный режим"
+    name: "Перезагрузить в безопасном режиме"
+
     entity_category: config
+
     web_server:
       sorting_group_id: group_device
       sorting_weight: 50
+
+script:
+  - id: send_to_narodmon
+    mode: single
+
+    then:
+      - if:
+          condition:
+            and:
+              - wifi.connected
+
+              - lambda: |-
+                  return
+                    id(fridge_temperature).has_state() &&
+                    !isnan(
+                      id(fridge_temperature).state
+                    );
+
+          then:
+            - logger.log:
+                level: INFO
+                format: "Отправка данных в Народный мониторинг"
+
+            - http_request.post:
+                url: "https://narodmon.ru/post"
+
+                request_headers:
+                  Content-Type: "application/x-www-form-urlencoded"
+
+                body: !lambda |-
+                  char request_body[320];
+
+                  snprintf(
+                    request_body,
+                    sizeof(request_body),
+                    "ID=${narodmon_device_id}"
+                    "&OWNER=${narodmon_owner}"
+                    "&NAME=Fridge-Monitor"
+                    "&T1=%.4f"
+                    "&RSSI=%.0f",
+                    id(fridge_temperature).state,
+                    id(wifi_signal_db).has_state()
+                      ? id(wifi_signal_db).state
+                      : -127.0f
+                  );
+
+                  return std::string(request_body);
+
+                capture_response: true
+                max_response_buffer_size: 512
+
+                on_response:
+                  then:
+                    - lambda: |-
+                        ESP_LOGI(
+                          "narodmon",
+                          "HTTP %d, ответ: %s",
+                          response->status_code,
+                          body.c_str()
+                        );
+
+                        if (
+                          response->status_code == 200 &&
+                          body.find("OK") !=
+                            std::string::npos
+                        ) {
+                          id(narodmon_last_send_ok)
+                            .publish_state(true);
+
+                          id(narodmon_status)
+                            .publish_state("OK");
+                        } else {
+                          id(narodmon_last_send_ok)
+                            .publish_state(false);
+
+                          id(narodmon_status)
+                            .publish_state(
+                              "HTTP " +
+                              std::to_string(
+                                response->status_code
+                              ) +
+                              ": " +
+                              body
+                            );
+                        }
+
+                on_error:
+                  then:
+                    - lambda: |-
+                        ESP_LOGE(
+                          "narodmon",
+                          "Ошибка HTTP-запроса"
+                        );
+
+                        id(narodmon_last_send_ok)
+                          .publish_state(false);
+
+                        id(narodmon_status)
+                          .publish_state(
+                            "Ошибка соединения"
+                          );
+
+          else:
+            - logger.log:
+                level: WARN
+                format: "Отправка пропущена: нет Wi-Fi или данных температуры"
+
+            - binary_sensor.template.publish:
+                id: narodmon_last_send_ok
+                state: false
+
+            - text_sensor.template.publish:
+                id: narodmon_status
+                state: "Нет Wi-Fi или данных датчика"
+
+interval:
+  # Первая отправка произойдёт через минуту после загрузки.
+  # Затем данные уходят раз в пять минут.
+  - interval: 5min
+    startup_delay: 1min
+
+    then:
+      - script.execute: send_to_narodmon
