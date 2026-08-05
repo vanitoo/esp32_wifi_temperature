@@ -523,3 +523,4 @@ interval:
 
     then:
       - script.execute: send_to_narodmon
+      
