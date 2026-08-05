@@ -478,7 +478,7 @@ script:
 
 
                           id(narodmon_status)
-                            .publish_state(
+                            ->publish_state(
                               "HTTP " +
                               std::to_string(
                                 response->status_code
@@ -499,10 +499,10 @@ script:
                         );
 
                         id(narodmon_last_send_ok)
-                          .publish_state(false);
+                          ->publish_state(false);
 
                         id(narodmon_status)
-                          .publish_state(
+                          ->publish_state(
                             "Ошибка соединения"
                           );
 
