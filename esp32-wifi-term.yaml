@@ -452,40 +452,37 @@ script:
                 max_response_buffer_size: 512
 
                 on_response:
-                  then:
-                    - lambda: |-
-                        ESP_LOGI(
-                          "narodmon",
-                          "HTTP %d, ответ: %s",
-                          response->status_code,
-                          body.c_str()
-                        );
+  then:
+    - lambda: |-
+        ESP_LOGI(
+          "narodmon",
+          "HTTP %d, ответ: %s",
+          response->status_code,
+          body.c_str()
+        );
 
-                        if (
-                          response->status_code == 200 &&
-                          body.find("OK") !=
-                            std::string::npos
-                        ) {
-                          id(narodmon_last_send_ok)
-                            .publish_state(true);
+        if (
+          response->status_code == 200 &&
+          body.find("OK") != std::string::npos
+        ) {
+          id(narodmon_last_send_ok)
+            ->publish_state(true);
 
-                          id(narodmon_status)
-                            .publish_state("OK");
-                        } else {
-                          id(narodmon_last_send_ok)
-                            .publish_state(false);
+          id(narodmon_status)
+            ->publish_state("OK");
+        } else {
+          id(narodmon_last_send_ok)
+            ->publish_state(false);
 
-                          id(narodmon_status)
-                            .publish_state(
-                              "HTTP " +
-                              std::to_string(
-                                response->status_code
-                              ) +
-                              ": " +
-                              body
-                            );
-                        }
-
+          id(narodmon_status)
+            ->publish_state(
+              "HTTP " +
+              std::to_string(response->status_code) +
+              ": " +
+              body
+            );
+        }
+                        
                 on_error:
                   then:
                     - lambda: |-
