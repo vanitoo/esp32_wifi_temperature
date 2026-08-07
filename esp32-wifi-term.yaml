@@ -1,6 +1,6 @@
 substitutions:
   device_name: esp32-wifi-term
-  friendly_name: "Холодильная витрина"
+  friendly_name: "Датчик температуры"
 
   # MAC платы без двоеточий.
   narodmon_device_id: "8CD0B2A87C21"
@@ -9,11 +9,11 @@ substitutions:
 esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
-  comment: "Мониторинг температуры холодильной витрины"
+  comment: "Универсальный Wi-Fi датчик температуры"
 
   project:
     name: "iven.fridge-monitor"
-    version: "0.5.0"
+    version: "0.6.0"
 
   on_boot:
     priority: -100
@@ -33,6 +33,8 @@ external_components:
       path: components
 
 logger:
+  # DEBUG — максимальный уровень, включённый в бинарник.
+  # Фактический уровень можно менять без перепрошивки на /settings.
   level: DEBUG
 
 debug:
@@ -94,7 +96,7 @@ web_server:
       name: "Температура"
       sorting_weight: 10
     - id: group_alarms
-      name: "Состояние витрины"
+      name: "Состояние датчика"
       sorting_weight: 20
     - id: group_cloud
       name: "Облачный мониторинг"
@@ -110,7 +112,7 @@ web_server:
       sorting_weight: 60
 
 http_request:
-  useragent: "ESPHome-Fridge-Monitor/0.5.0"
+  useragent: "ESPHome-Temperature-Monitor/0.6.0"
   timeout: 10s
   verify_ssl: true
   follow_redirects: true
@@ -132,7 +134,7 @@ one_wire:
 sensor:
   - platform: dallas_temp
     id: fridge_temperature
-    name: "Температура витрины"
+    name: "Температура"
     one_wire_id: one_wire_bus
     resolution: 12
     update_interval: 30s
@@ -529,7 +531,8 @@ script:
             and:
               - wifi.connected
               - lambda: |-
-                  return id(fridge_temperature).has_state() &&
+                  return id(fridge_cfg)->narodmon_enabled() &&
+                         id(fridge_temperature).has_state() &&
                          !isnan(id(fridge_temperature).state);
           then:
             - http_request.post:
@@ -543,7 +546,7 @@ script:
                     sizeof(request_body),
                     "ID=${narodmon_device_id}"
                     "&OWNER=${narodmon_owner}"
-                    "&NAME=Fridge-Monitor"
+                    "&NAME=Temperature-Monitor"
                     "&T1=%.4f"
                     "&RSSI=%.0f",
                     id(fridge_temperature).state,
@@ -595,10 +598,16 @@ script:
                 state: false
             - text_sensor.template.publish:
                 id: narodmon_status
-                state: "Нет Wi-Fi или данных датчика"
+                state: "Отключено, нет Wi-Fi или данных датчика"
 
 interval:
-  - interval: 5min
+  # Тик раз в минуту, фактический интервал задаётся в /settings.
+  - interval: 1min
     startup_delay: 1min
     then:
-      - script.execute: send_to_narodmon
+      - if:
+          condition:
+            lambda: |-
+              return id(fridge_cfg)->consume_narodmon_due(millis());
+          then:
+            - script.execute: send_to_narodmon
