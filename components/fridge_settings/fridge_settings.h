@@ -5,6 +5,7 @@
 
 #include "esphome/core/component.h"
 #include "esphome/core/preferences.h"
+#include "esphome/components/logger/logger.h"
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/components/web_server_base/web_server_base.h"
 
@@ -22,7 +23,7 @@ struct RuntimeSettings {
   uint32_t alarm_delay_s{300};
   uint32_t recovery_delay_s{300};
 
-  uint8_t log_level{4};  // ESPHOME_LOG_LEVEL_DEBUG
+  uint8_t log_level{ESPHOME_LOG_LEVEL_DEBUG};
   uint8_t narodmon_enabled{1};
   uint16_t narodmon_interval_min{5};
 };
