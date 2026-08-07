@@ -63,9 +63,9 @@ wifi:
   reboot_timeout: 30min
 
   ap:
-    ssid: "${friendly_name} Setup"
+    ssid: "Fridge-A87C21"
     password: !secret fallback_password
-    ap_timeout: 90s
+    ap_timeout: 30s
 
   on_connect:
     then:
