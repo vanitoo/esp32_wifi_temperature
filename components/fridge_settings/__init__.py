@@ -26,17 +26,20 @@ CONFIG_SCHEMA = cv.Schema({
     cv.Optional(CONF_WARNING_DELAY_DEFAULT, default=600): cv.int_range(min=0, max=86400),
     cv.Optional(CONF_ALARM_DELAY_DEFAULT, default=300): cv.int_range(min=0, max=86400),
     cv.Optional(CONF_RECOVERY_DELAY_DEFAULT, default=300): cv.int_range(min=0, max=86400),
+    # ESPHome builds internal object IDs from ASCII characters in entity names.
+    # Pure Cyrillic labels can collapse to the same underscore-only ID, so each
+    # generated entity carries a short unique ASCII suffix.
     cv.Optional(
         CONF_FIRMWARE_VERSION,
-        default={CONF_NAME: "Версия прошивки"},
+        default={CONF_NAME: "Версия прошивки [FW]"},
     ): text_sensor.text_sensor_schema(entity_category=ENTITY_CATEGORY_DIAGNOSTIC),
     cv.Optional(
         CONF_OBJECT_NAME,
-        default={CONF_NAME: "Настроенный объект"},
+        default={CONF_NAME: "Настроенный объект [OBJ]"},
     ): text_sensor.text_sensor_schema(),
     cv.Optional(
         CONF_LOG_LEVEL,
-        default={CONF_NAME: "Уровень логирования"},
+        default={CONF_NAME: "Уровень логирования [LOG]"},
     ): text_sensor.text_sensor_schema(entity_category=ENTITY_CATEGORY_DIAGNOSTIC),
 }).extend(cv.COMPONENT_SCHEMA)
 
