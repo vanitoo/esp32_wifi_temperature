@@ -5,6 +5,7 @@
 
 #include "esphome/core/component.h"
 #include "esphome/core/preferences.h"
+#include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/components/web_server_base/web_server_base.h"
 
 namespace esphome {
@@ -24,6 +25,9 @@ class FridgeSettings : public Component, public AsyncWebHandler {
   void set_defaults(float warning_c, float alarm_c, float recovery_c,
                     uint32_t warning_delay_s, uint32_t alarm_delay_s,
                     uint32_t recovery_delay_s);
+  void set_firmware_version_sensor(text_sensor::TextSensor *sensor) {
+    firmware_version_sensor_ = sensor;
+  }
 
   void setup() override;
   void dump_config() override;
@@ -55,6 +59,7 @@ class FridgeSettings : public Component, public AsyncWebHandler {
   RuntimeSettings settings_;
   RuntimeSettings defaults_;
   ESPPreferenceObject pref_;
+  text_sensor::TextSensor *firmware_version_sensor_{nullptr};
 };
 
 }  // namespace fridge_settings

@@ -28,6 +28,10 @@ void FridgeSettings::setup() {
   pref_ = global_preferences->make_preference<Persisted>(0xA87311D4);
   load_();
 
+  if (firmware_version_sensor_ != nullptr) {
+    firmware_version_sensor_->publish_state(ESPHOME_PROJECT_VERSION);
+  }
+
   if (web_server_base::global_web_server_base != nullptr) {
     web_server_base::global_web_server_base->add_handler(this);
   } else {
@@ -38,6 +42,7 @@ void FridgeSettings::setup() {
 
 void FridgeSettings::dump_config() {
   ESP_LOGCONFIG(TAG, "Fridge runtime settings:");
+  ESP_LOGCONFIG(TAG, "  Firmware: %s", ESPHOME_PROJECT_VERSION);
   ESP_LOGCONFIG(TAG, "  Warning: %.1f C / %u s", settings_.warning_c,
                 (unsigned) settings_.warning_delay_s);
   ESP_LOGCONFIG(TAG, "  Alarm: %.1f C / %u s", settings_.alarm_c,
