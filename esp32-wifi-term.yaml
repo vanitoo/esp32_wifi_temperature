@@ -1,9 +1,6 @@
 substitutions:
   device_name: esp32-wifi-term
   friendly_name: "Холодильная витрина"
-  warning_temperature: "6.0"
-  alarm_temperature: "8.0"
-  recovery_temperature: "5.0"
 
   # MAC платы без двоеточий.
   narodmon_device_id: "8CD0B2A87C21"
@@ -16,7 +13,7 @@ esphome:
 
   project:
     name: "iven.fridge-monitor"
-    version: "0.4.0"
+    version: "0.5.0"
 
   on_boot:
     priority: -100
@@ -37,12 +34,7 @@ external_components:
 
 logger:
   level: DEBUG
-  # В RAM сохраняется максимум 250 уже отформатированных строк.
-  # Частые VERBOSE/VERY_VERBOSE логи намеренно не включены.
 
-# Диагностика платы и памяти.
-# Точного универсального процента загрузки CPU ESPHome не предоставляет.
-# Loop Time показывает задержки главного цикла и помогает обнаруживать перегрузку.
 debug:
   update_interval: 60s
 
@@ -57,9 +49,7 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-
   power_save_mode: none
-
   reboot_timeout: 30min
 
   ap:
@@ -73,10 +63,7 @@ wifi:
           level: INFO
           format: "Wi-Fi подключён"
       - lambda: |-
-          id(temp_history)->add_event(
-            "wifi",
-            "Wi-Fi подключён"
-          );
+          id(temp_history)->add_event("wifi", "Wi-Fi подключён");
 
   on_disconnect:
     then:
@@ -84,11 +71,7 @@ wifi:
           level: WARN
           format: "Wi-Fi отключён"
       - lambda: |-
-          id(temp_history)->add_event(
-            "wifi",
-            "Wi-Fi отключён"
-          );
-          
+          id(temp_history)->add_event("wifi", "Wi-Fi отключён");
 
 captive_portal:
   compression: gzip
@@ -127,10 +110,19 @@ web_server:
       sorting_weight: 60
 
 http_request:
-  useragent: "ESPHome-Fridge-Monitor/0.4.0"
+  useragent: "ESPHome-Fridge-Monitor/0.5.0"
   timeout: 10s
   verify_ssl: true
   follow_redirects: true
+
+fridge_settings:
+  id: fridge_cfg
+  warning_default: 6.0
+  alarm_default: 8.0
+  recovery_default: 5.0
+  warning_delay_default: 600
+  alarm_delay_default: 300
+  recovery_delay_default: 300
 
 one_wire:
   - platform: gpio
@@ -178,7 +170,6 @@ sensor:
       web_server:
         sorting_group_id: group_diagnostics
         sorting_weight: 10
-
     min_free:
       name: "Минимум свободной RAM"
       id: heap_min_free
@@ -187,7 +178,6 @@ sensor:
       web_server:
         sorting_group_id: group_diagnostics
         sorting_weight: 20
-
     block:
       name: "Максимальный свободный блок RAM"
       id: heap_max_block
@@ -196,7 +186,6 @@ sensor:
       web_server:
         sorting_group_id: group_diagnostics
         sorting_weight: 30
-
     fragmentation:
       name: "Фрагментация RAM"
       id: heap_fragmentation
@@ -205,7 +194,6 @@ sensor:
       web_server:
         sorting_group_id: group_diagnostics
         sorting_weight: 40
-
     loop_time:
       name: "Максимальное время цикла"
       id: main_loop_time
@@ -214,7 +202,6 @@ sensor:
       web_server:
         sorting_group_id: group_diagnostics
         sorting_weight: 50
-
     cpu_frequency:
       name: "Частота процессора"
       id: cpu_frequency
@@ -254,11 +241,38 @@ binary_sensor:
     name: "Предупреждение: температура выше нормы"
     device_class: problem
     lambda: |-
-      return id(fridge_temperature).has_state() &&
-             id(fridge_temperature).state > ${warning_temperature};
-    filters:
-      - delayed_on: 10min
-      - delayed_off: 5min
+      static uint32_t above_since = 0;
+      static uint32_t below_since = 0;
+
+      if (!id(fridge_temperature).has_state() ||
+          isnan(id(fridge_temperature).state)) {
+        above_since = 0;
+        below_since = 0;
+        return false;
+      }
+
+      const float t = id(fridge_temperature).state;
+      const uint32_t now = millis();
+
+      if (!id(temperature_warning).state) {
+        below_since = 0;
+        if (t > id(fridge_cfg)->warning_c()) {
+          if (above_since == 0) above_since = now;
+          return (now - above_since) >= id(fridge_cfg)->warning_delay_s() * 1000UL;
+        }
+        above_since = 0;
+        return false;
+      }
+
+      above_since = 0;
+      if (t <= id(fridge_cfg)->recovery_c()) {
+        if (below_since == 0) below_since = now;
+        return !((now - below_since) >= id(fridge_cfg)->recovery_delay_s() * 1000UL);
+      }
+
+      below_since = 0;
+      return true;
+
     on_press:
       then:
         - logger.log:
@@ -269,6 +283,7 @@ binary_sensor:
               "warning",
               "Температура выше предупредительного порога"
             );
+
     on_release:
       then:
         - logger.log:
@@ -276,6 +291,7 @@ binary_sensor:
             format: "Предупреждение снято"
         - lambda: |-
             id(temp_history)->add_event("recovery", "Предупреждение снято");
+
     web_server:
       sorting_group_id: group_alarms
       sorting_weight: 20
@@ -285,11 +301,38 @@ binary_sensor:
     name: "Авария: критическая температура"
     device_class: problem
     lambda: |-
-      return id(fridge_temperature).has_state() &&
-             id(fridge_temperature).state > ${alarm_temperature};
-    filters:
-      - delayed_on: 5min
-      - delayed_off: 5min
+      static uint32_t above_since = 0;
+      static uint32_t below_since = 0;
+
+      if (!id(fridge_temperature).has_state() ||
+          isnan(id(fridge_temperature).state)) {
+        above_since = 0;
+        below_since = 0;
+        return false;
+      }
+
+      const float t = id(fridge_temperature).state;
+      const uint32_t now = millis();
+
+      if (!id(temperature_alarm).state) {
+        below_since = 0;
+        if (t > id(fridge_cfg)->alarm_c()) {
+          if (above_since == 0) above_since = now;
+          return (now - above_since) >= id(fridge_cfg)->alarm_delay_s() * 1000UL;
+        }
+        above_since = 0;
+        return false;
+      }
+
+      above_since = 0;
+      if (t <= id(fridge_cfg)->recovery_c()) {
+        if (below_since == 0) below_since = now;
+        return !((now - below_since) >= id(fridge_cfg)->recovery_delay_s() * 1000UL);
+      }
+
+      below_since = 0;
+      return true;
+
     on_press:
       then:
         - logger.log:
@@ -297,6 +340,7 @@ binary_sensor:
             format: "АВАРИЯ: критическая температура"
         - lambda: |-
             id(temp_history)->add_event("alarm", "Критическая температура");
+
     on_release:
       then:
         - logger.log:
@@ -307,6 +351,7 @@ binary_sensor:
               "recovery",
               "Температура вернулась в допустимый диапазон"
             );
+
     web_server:
       sorting_group_id: group_alarms
       sorting_weight: 10
@@ -366,13 +411,13 @@ text_sensor:
       if (id(temperature_warning).state)
         return {"ПРЕДУПРЕЖДЕНИЕ"};
 
-      if (temperature > ${alarm_temperature})
+      if (temperature > id(fridge_cfg)->alarm_c())
         return {"Высокая температура — таймер аварии"};
 
-      if (temperature > ${warning_temperature})
+      if (temperature > id(fridge_cfg)->warning_c())
         return {"Повышенная температура — таймер предупреждения"};
 
-      if (temperature <= ${recovery_temperature})
+      if (temperature <= id(fridge_cfg)->recovery_c())
         return {"Норма"};
 
       return {"Допустимо"};
@@ -383,12 +428,22 @@ text_sensor:
   - platform: template
     name: "Страница истории"
     icon: "mdi:chart-line"
-    update_interval: never
+    update_interval: 60s
     lambda: |-
       return {"http://${device_name}.local/history"};
     web_server:
       sorting_group_id: group_temperature
       sorting_weight: 20
+
+  - platform: template
+    name: "Страница настроек"
+    icon: "mdi:cog"
+    update_interval: 60s
+    lambda: |-
+      return {"http://${device_name}.local/settings"};
+    web_server:
+      sorting_group_id: group_device
+      sorting_weight: 25
 
   - platform: template
     id: narodmon_status
@@ -406,7 +461,6 @@ text_sensor:
       web_server:
         sorting_group_id: group_diagnostics
         sorting_weight: 70
-
     reset_reason:
       name: "Причина перезагрузки"
       entity_category: diagnostic
