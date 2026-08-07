@@ -65,7 +65,7 @@ wifi:
   ap:
     ssid: "${friendly_name} Setup"
     password: !secret fallback_password
-    ap_timeout: 30s
+    ap_timeout: 90s
 
   on_connect:
     then:
