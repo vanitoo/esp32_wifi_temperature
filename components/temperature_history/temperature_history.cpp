@@ -151,7 +151,8 @@ void TemperatureHistory::clear_logs() {
 }
 
 bool TemperatureHistory::canHandle(AsyncWebServerRequest *request) const {
-  const auto &url = request->url();
+  char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
+  const auto url = request->url_to(url_buf);
 
   if (request->method() == HTTP_GET) {
     return url == "/" || url == "/monitor" || url == "/monitor/" ||
@@ -168,7 +169,8 @@ bool TemperatureHistory::canHandle(AsyncWebServerRequest *request) const {
 }
 
 void TemperatureHistory::handleRequest(AsyncWebServerRequest *request) {
-  const auto &url = request->url();
+  char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
+  const auto url = request->url_to(url_buf);
 
   if (url == "/" || url == "/monitor" || url == "/monitor/") {
     const std::string body = R"PAGE(<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Датчик температуры</title><style>
