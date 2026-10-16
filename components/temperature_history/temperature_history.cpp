@@ -369,16 +369,16 @@ td,th{text-align:left;padding:9px;border-bottom:1px solid #e5e7eb;vertical-align
  body{background:#101418;color:#edf2f7}.card{background:#1b222a}
  .metric,canvas{background:#111820}td,th{border-color:#34404c}
 }
-</style>
+.site-nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 20px}.site-nav a{display:inline-block;padding:11px 16px;border-radius:10px;text-decoration:none;background:#25334a;color:#fff;font-weight:600}.site-nav a:hover{background:#155eef}.site-nav a[href="/history"]{background:#155eef;color:#fff}</style>
 </head>
 <body>
 <main>
 <header>
-<div><h1>Холодильная витрина</h1>
+<div><h1>История температуры</h1>
 <div class="small">История хранится в RAM и очищается только после перезагрузки или вручную.</div></div>
-<a href="/">Основной портал</a>
-</header>
 
+</header>
+<nav class="site-nav"><a href="/">Мониторинг</a><a href="/history">История</a><a href="/settings">⚙ Настройки</a></nav>
 <section class="card">
 <div class="metrics">
 <div class="metric"><span>Последняя</span><b id="last">—</b></div>
