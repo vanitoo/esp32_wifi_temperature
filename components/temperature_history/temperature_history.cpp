@@ -154,7 +154,7 @@ bool TemperatureHistory::canHandle(AsyncWebServerRequest *request) const {
   const auto &url = request->url();
 
   if (request->method() == HTTP_GET) {
-    return url == "/monitor" || url == "/monitor/" ||
+    return url == "/" || url == "/monitor" || url == "/monitor/" ||
            url == "/history" ||
            url == "/history/" ||
            url == "/history.json" ||
@@ -170,10 +170,10 @@ bool TemperatureHistory::canHandle(AsyncWebServerRequest *request) const {
 void TemperatureHistory::handleRequest(AsyncWebServerRequest *request) {
   const auto &url = request->url();
 
-  if (url == "/monitor" || url == "/monitor/") {
+  if (url == "/" || url == "/monitor" || url == "/monitor/") {
     const std::string body = R"PAGE(<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Датчик температуры</title><style>
 :root{font-family:system-ui,sans-serif;color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0b1120;color:#e5edf8}main{max-width:1080px;margin:auto;padding:24px}header{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}h1{font-size:clamp(24px,4vw,36px);margin:0}p{color:#94a3b8}nav{display:flex;gap:8px;flex-wrap:wrap;margin:24px 0}nav a{color:#e2e8f0;text-decoration:none;background:#1e293b;padding:12px 18px;border-radius:12px}nav a.active{background:#2563eb}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}.card{background:#151f31;border:1px solid #334155;border-radius:18px;padding:24px;min-width:0}.label{color:#94a3b8;font-size:14px}.value{font-size:clamp(40px,8vw,72px);font-weight:750;margin:10px 0}.ok{color:#34d399}.warn{color:#fbbf24}.alarm{color:#fb7185}.events{margin:0;padding-left:20px;line-height:2}.muted{color:#94a3b8}footer{margin-top:25px;color:#94a3b8;font-size:13px}@media(max-width:600px){main{padding:14px}.card{padding:18px}}
-</style></head><body><main><header><div><h1>Датчик температуры</h1><p>Мониторинг в реальном времени · без пароля</p></div><span id="online" class="warn">Подключение…</span></header><nav><a class="active" href="/monitor">Обзор</a><a href="/history">История</a><a href="/settings">⚙ Настройки</a></nav><section class="grid"><article class="card"><div class="label">Текущая температура</div><div id="temp" class="value">—</div><div id="status" class="muted">Ожидание измерений</div></article><article class="card"><div class="label">Записано измерений</div><div id="count" class="value">—</div><div class="muted">Буфер до 1000 точек, до перезагрузки</div></article></section><section class="card" style="margin-top:16px"><h2>Последние события</h2><ul id="events" class="events"><li>Загрузка…</li></ul></section><footer>Автоматическое обновление каждые 15 секунд · Управление и обновление прошивки требуют пароль администратора.</footer></main><script>
+</style></head><body><main><header><div><h1>Датчик температуры</h1><p>Мониторинг в реальном времени · без пароля</p></div><span id="online" class="warn">Подключение…</span></header><nav><a class="active" href="/">Обзор</a><a href="/history">История</a><a href="/settings">⚙ Настройки</a></nav><section class="grid"><article class="card"><div class="label">Текущая температура</div><div id="temp" class="value">—</div><div id="status" class="muted">Ожидание измерений</div></article><article class="card"><div class="label">Записано измерений</div><div id="count" class="value">—</div><div class="muted">Буфер до 1000 точек, до перезагрузки</div></article></section><section class="card" style="margin-top:16px"><h2>Последние события</h2><ul id="events" class="events"><li>Загрузка…</li></ul></section><footer>Автоматическое обновление каждые 15 секунд · Управление и обновление прошивки требуют пароль администратора.</footer></main><script>
 const $=id=>document.getElementById(id);
 async function refresh(){try{const [h,e]=await Promise.all([fetch('/history.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error(r.status);return r.json()}),fetch('/events.json',{cache:'no-store'}).then(r=>r.json())]);const pts=h.points||[];const p=pts.at(-1);$('temp').textContent=p?Number(p.value).toFixed(2)+' °C':'—';$('count').textContent=pts.length+' / '+h.capacity;$('online').textContent='● На связи';$('online').className='ok';$('status').textContent=p?'Последнее сохранённое измерение':'Ожидание датчика';const ul=$('events');ul.replaceChildren();for(const item of (e.events||[]).slice(-8).reverse()){const li=document.createElement('li');li.textContent=item.type+': '+item.message;ul.append(li)}if(!ul.children.length){const li=document.createElement('li');li.textContent='Событий пока нет';ul.append(li)}}catch(err){$('online').textContent='● Нет связи';$('online').className='alarm';$('status').textContent='Не удалось получить данные'}}refresh();setInterval(refresh,15000);
 </script></body></html>)PAGE";
@@ -374,7 +374,7 @@ td,th{text-align:left;padding:9px;border-bottom:1px solid #e5e7eb;vertical-align
 <div class="small">История хранится в RAM и очищается только после перезагрузки или вручную.</div></div>
 
 </header>
-<nav class="site-nav"><a href="/monitor">Мониторинг</a><a href="/history">История</a><a href="/settings">⚙ Настройки</a></nav>
+<nav class="site-nav"><a href="/">Мониторинг</a><a href="/history">История</a><a href="/settings">⚙ Настройки</a></nav>
 <section class="card">
 <div class="metrics">
 <div class="metric"><span>Последняя</span><b id="last">—</b></div>
