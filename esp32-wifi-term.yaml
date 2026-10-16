@@ -13,7 +13,7 @@ esphome:
 
   project:
     name: "iven.fridge-monitor"
-    version: "0.7.0"
+    version: "0.8.0"
 
   on_boot:
     priority: -100
@@ -113,7 +113,7 @@ web_server:
       sorting_weight: 60
 
 http_request:
-  useragent: "ESPHome-Temperature-Monitor/0.7.0"
+  useragent: "ESPHome-Temperature-Monitor/0.8.0"
   timeout: 10s
   verify_ssl: true
   follow_redirects: true
