@@ -75,6 +75,7 @@ wifi:
       - lambda: |-
           id(temp_history)->add_event("wifi", "Wi-Fi отключён");
 
+  use_address: 192.168.20.111
 captive_portal:
   compression: gzip
 
