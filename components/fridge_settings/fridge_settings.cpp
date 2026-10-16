@@ -117,7 +117,8 @@ bool FridgeSettings::consume_narodmon_due(uint32_t now_ms) {
 }
 
 bool FridgeSettings::canHandle(AsyncWebServerRequest *request) const {
-  const std::string url = request->url();
+  char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
+  const auto url = request->url_to(url_buf);
   if (request->method() == HTTP_GET)
     return url == "/settings" || url == "/settings/" || url == "/settings.json";
   if (request->method() == HTTP_POST)
@@ -126,7 +127,8 @@ bool FridgeSettings::canHandle(AsyncWebServerRequest *request) const {
 }
 
 void FridgeSettings::handleRequest(AsyncWebServerRequest *request) {
-  const std::string url = request->url();
+  char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
+  const auto url = request->url_to(url_buf);
 
   if (request->method() == HTTP_GET) {
     if (url == "/settings.json") {
