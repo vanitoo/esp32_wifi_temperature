@@ -10,11 +10,11 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Invoke-ESPHome {
-    param([string[]]$Args)
+    param([string[]]$CommandArgs)
 
     $cmd = Get-Command esphome -ErrorAction SilentlyContinue
     if ($null -ne $cmd) {
-        & esphome @Args
+        & esphome @CommandArgs
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         return
     }
@@ -22,7 +22,7 @@ function Invoke-ESPHome {
     # Fallback to the venv used earlier in this project.
     $venvPython = "C:\esphome\Scripts\python.exe"
     if (Test-Path $venvPython) {
-        & $venvPython -m esphome @Args
+        & $venvPython -m esphome @CommandArgs
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         return
     }
@@ -36,18 +36,18 @@ Set-Location $repoRoot
 switch ($Mode) {
     "build" {
         Write-Host "==> Compiling $Config" -ForegroundColor Cyan
-        Invoke-ESPHome @("compile", $Config)
+        Invoke-ESPHome -CommandArgs @("compile", $Config)
     }
     "usb" {
         Write-Host "==> Building and flashing $Config to $Port" -ForegroundColor Cyan
-        Invoke-ESPHome @("run", $Config, "--device", $Port)
+        Invoke-ESPHome -CommandArgs @("run", $Config, "--device", $Port)
     }
     "ota" {
         Write-Host "==> Building and flashing $Config over OTA to $Device" -ForegroundColor Cyan
-        Invoke-ESPHome @("run", $Config, "--device", $Device)
+        Invoke-ESPHome -CommandArgs @("run", $Config, "--device", $Device)
     }
     "logs" {
         Write-Host "==> Opening logs from $Device" -ForegroundColor Cyan
-        Invoke-ESPHome @("logs", $Config, "--device", $Device)
+        Invoke-ESPHome -CommandArgs @("logs", $Config, "--device", $Device)
     }
 }
