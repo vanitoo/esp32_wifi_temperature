@@ -293,10 +293,10 @@ button{padding:10px 14px;border:0;border-radius:8px;margin:12px 8px 0 0;cursor:p
 .msg,.hint{margin-top:12px;color:#667085}.version{font-family:ui-monospace,Consolas,monospace}
 a{color:#155eef}@media(max-width:600px){.row{grid-template-columns:1fr}}
 @media(prefers-color-scheme:dark){body{background:#101418;color:#edf2f7}.card{background:#1b222a}input,select{border-color:#475467}}
-</style></head>
+.site-nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 20px}.site-nav a{display:inline-block;padding:11px 16px;border-radius:10px;text-decoration:none;background:#25334a;color:#fff;font-weight:600}.site-nav a:hover{background:#155eef}.site-nav a[href="/settings"]{background:#155eef;color:#fff}</style></head>
 <body><main>
-<h1>Настройки датчика температуры</h1>
-<div><a href="/">Основной портал</a> · <a href="/history">История</a></div>
+<h1>Настройки датчика температуры</h1><p>Администрирование · изменение параметров устройства</p>
+<nav class="site-nav"><a href="/">Мониторинг</a><a href="/history">История</a><a href="/settings">⚙ Настройки</a></nav>
 <form id="f">
 <div class="card"><h2>Объект</h2>
 <label>Название объекта</label><input name="object_name" maxlength="63" placeholder="Например: Холодильная витрина №1">
