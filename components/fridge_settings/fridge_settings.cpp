@@ -120,7 +120,7 @@ bool FridgeSettings::canHandle(AsyncWebServerRequest *request) const {
   char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
   const auto url = request->url_to(url_buf);
   if (request->method() == HTTP_GET)
-    return url == "/settings" || url == "/settings/" || url == "/settings.json";
+    return url == "/settings" || url == "/settings/" || url == "/settings.json" || url == "/info" || url == "/info/";
   if (request->method() == HTTP_POST)
     return url == "/settings/save" || url == "/settings/reset";
   return false;
@@ -131,6 +131,25 @@ void FridgeSettings::handleRequest(AsyncWebServerRequest *request) {
   const auto url = request->url_to(url_buf);
 
   if (request->method() == HTTP_GET) {
+    if (url == "/info" || url == "/info/") {
+      const std::string body = R"INFO(<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Информация · Датчик температуры</title><style>
+:root{font-family:system-ui,sans-serif;color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0b1120;color:#e5edf8}main{max-width:1080px;margin:auto;padding:24px}h1{font-size:clamp(24px,4vw,36px);margin:0}p,.hint{color:#94a3b8}nav{display:flex;gap:8px;flex-wrap:wrap;margin:24px 0}nav a{color:#e2e8f0;text-decoration:none;background:#1e293b;padding:12px 18px;border-radius:12px}nav a.active{background:#2563eb}.card{background:#151f31;border:1px solid #334155;border-radius:18px;padding:24px;margin:16px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}.grid .card{margin:0}.value{font-size:1.3rem;font-weight:650;overflow-wrap:anywhere}.label{color:#94a3b8;font-size:.9rem;margin-bottom:8px}a{color:#93c5fd}code{overflow-wrap:anywhere}@media(max-width:600px){main{padding:14px}.card{padding:18px}}
+</style></head><body><main><h1>Информация об устройстве</h1><p>Диагностика и служебные сведения · доступ администратора</p><nav><a href="/">Мониторинг</a><a href="/history">История</a><a href="/settings">Настройки</a><a class="active" href="/info">Информация</a></nav><div class="grid">
+<div class="card"><div class="label">Версия прошивки</div><div class="value" id="fw">—</div></div>
+<div class="card"><div class="label">Устройство</div><div class="value">ESP32-C3 · ESP-IDF</div><div class="hint">Датчик DS18B20, GPIO4</div></div>
+<div class="card"><div class="label">Сетевой адрес</div><div class="value" id="ip">—</div><div class="hint">Hostname: esp32-wifi-term.local</div></div>
+<div class="card"><div class="label">Состояние Wi-Fi</div><div class="value" id="wifi">—</div><div class="hint">Резервная точка: Fridge-A87C21</div></div>
+</div><section class="card"><h2>Настройки и облачный мониторинг</h2><div id="cfg" class="hint">Загрузка…</div></section><section class="card"><h2>Служебные данные ESPHome</h2><p class="hint">Ниже показаны доступные диагностические сущности штатного REST API. Отсутствующие сущности отмечены прочерком.</p><div id="entities" class="grid"></div></section><section class="card"><h2>Обслуживание</h2><p>Параметры порогов и отправки: <a href="/settings">Настройки</a>. Журнал и график: <a href="/history">История</a>.</p><p class="hint">Смена Wi-Fi выполняется через резервный портал при недоступности основной сети. OTA и команды управления ESPHome по-прежнему защищены паролем.</p></section></main><script>
+const $=x=>document.getElementById(x);
+const items=[['Температура','sensor','temperatura'],['Уровень Wi-Fi','sensor','uroven_wi_fi'],['Свободная RAM','sensor','svobodnaia_ram'],['Минимум свободной RAM','sensor','minimum_svobodnoi_ram'],['Максимальный свободный блок RAM','sensor','maksimalnyi_svobodnyi_blok_ram'],['Фрагментация RAM','sensor','fragmentatsiia_ram'],['Время работы','sensor','vremia_raboty'],['Частота процессора','sensor','chastota_protsessora'],['Состояние температуры','text_sensor','sostoianie_temperatury'],['Ответ Народного мониторинга','text_sensor','otvet_narodnogo_monitoringa'],['Информация о плате','text_sensor','informatsiia_o_plate'],['Причина перезагрузки','text_sensor','prichina_perezagruzki']];
+async function run(){try{const c=await fetch('/settings.json',{cache:'no-store'}).then(r=>r.json());$('fw').textContent=c.firmware_version||'—';$('cfg').textContent='Объект: '+c.object_name+' · Расположение: '+(c.location||'не задано')+' · Предупреждение: '+c.warning_c+' °C · Авария: '+c.alarm_c+' °C · Народный мониторинг: '+(c.narodmon_enabled?'включён':'выключен')+' · Интервал: '+c.narodmon_interval_min+' мин'}catch(e){$('cfg').textContent='Не удалось загрузить настройки'}
+$('ip').textContent=location.hostname;$('wifi').textContent='Подключено (веб-интерфейс доступен)';
+const root=$('entities');for(const [label,type,id] of items){const card=document.createElement('div');card.className='card';const title=document.createElement('div');title.className='label';title.textContent=label;const value=document.createElement('div');value.className='value';value.textContent='—';card.append(title,value);root.append(card);try{const r=await fetch('/'+type+'/'+id,{cache:'no-store'});if(r.ok){const j=await r.json();value.textContent=j.value??j.state??'—'}}catch(e){}}
+}run();
+</script></body></html>)INFO";
+      request->send(200, "text/html; charset=utf-8", body.c_str());
+      return;
+    }
     if (url == "/settings.json") {
       const std::string body = settings_json_();
       request->send(200, "application/json; charset=utf-8", body.c_str());
@@ -295,10 +314,12 @@ button{padding:10px 14px;border:0;border-radius:8px;margin:12px 8px 0 0;cursor:p
 .msg,.hint{margin-top:12px;color:#667085}.version{font-family:ui-monospace,Consolas,monospace}
 a{color:#155eef}@media(max-width:600px){.row{grid-template-columns:1fr}}
 @media(prefers-color-scheme:dark){body{background:#101418;color:#edf2f7}.card{background:#1b222a}input,select{border-color:#475467}}
-.site-nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 20px}.site-nav a{display:inline-block;padding:11px 16px;border-radius:10px;text-decoration:none;background:#25334a;color:#fff;font-weight:600}.site-nav a:hover{background:#155eef}.site-nav a[href="/settings"]{background:#155eef;color:#fff}</style></head>
+.site-nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 20px}.site-nav a{display:inline-block;padding:11px 16px;border-radius:10px;text-decoration:none;background:#25334a;color:#fff;font-weight:600}.site-nav a:hover{background:#155eef}.site-nav a[href="/settings"]{background:#155eef;color:#fff}
+:root{color-scheme:dark}*{box-sizing:border-box}body{background:#0b1120;color:#e5edf8}main{max-width:1080px;margin:auto;padding:24px}.card{background:#151f31;border:1px solid #334155;border-radius:18px;padding:24px;margin:16px 0;box-shadow:none}h1{font-size:clamp(24px,4vw,36px);margin:0}h2{font-size:1.25rem}p,.hint,.msg{color:#94a3b8}input,select{background:#0f172a;border:1px solid #475569;color:#e5edf8}.site-nav{display:flex;gap:8px;flex-wrap:wrap;margin:24px 0}.site-nav a{color:#e2e8f0;text-decoration:none;background:#1e293b;padding:12px 18px;border-radius:12px;font-weight:400}.site-nav a[href="/settings"]{background:#2563eb}@media(max-width:600px){main{padding:14px}.card{padding:18px}}
+</style></head>
 <body><main>
 <h1>Настройки датчика температуры</h1><p>Администрирование · изменение параметров устройства</p>
-<nav class="site-nav"><a href="/">Мониторинг</a><a href="/history">История</a><a href="/settings">⚙ Настройки</a></nav>
+<nav class="site-nav"><a href="/">Мониторинг</a><a href="/history">История</a><a href="/settings">Настройки</a><a href="/info">Информация</a></nav>
 <form id="f">
 <div class="card"><h2>Объект</h2>
 <label>Название объекта</label><input name="object_name" maxlength="63" placeholder="Например: Холодильная витрина №1">
